@@ -30,4 +30,16 @@ public class DownloadUtil {
         HttpEntity entity = response.getEntity();
         return EntityUtils.toString(entity);
     }
+    public static InputStream download(String path) throws IOException {
+        CloseableHttpClient httpClient = HttpClients.createDefault();
+        HttpUriRequest getRequest = new HttpGet(path);
+        CloseableHttpResponse response = httpClient.execute(getRequest);
+        StatusLine statusLine = response.getStatusLine();
+        int statusCode = statusLine.getStatusCode();
+        if (statusCode != 200) {
+            throw new RuntimeException("download fail, response status code: " + statusCode);
+        }
+        HttpEntity entity = response.getEntity();
+        return entity.getContent();
+    }
 }

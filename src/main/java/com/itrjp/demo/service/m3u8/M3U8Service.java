@@ -6,7 +6,10 @@ import com.itrjp.demo.service.m3u8.bean.M3u8;
 import com.itrjp.demo.util.DownloadUtil;
 import org.springframework.util.StringUtils;
 
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
@@ -40,12 +43,12 @@ public class M3U8Service {
         M3u8 m3u8 = parserIndexFile(indexFile);
 //        // 判断是否加密
         Key key = m3u8.getKey();
-        Object object = generateAesUtil(key);
+        Aes aes = generateAesUtil(prefix, key);
 //        // 下载文件
         List<Inf> infList = m3u8.getInfList();
         List<CompletableFuture<String>> infFuture = infList.stream()
                 .map(inf ->
-                        CompletableFuture.supplyAsync(() -> downloadFile(inf, prefix, key))
+                        CompletableFuture.supplyAsync(() -> downloadFile(inf, prefix, aes))
                 )
                 .collect(Collectors.toList());
         infFuture.stream()
@@ -53,13 +56,19 @@ public class M3U8Service {
                 .forEach(System.out::println);
     }
 
-    private static Object generateAesUtil(Key key) {
+    private static Aes generateAesUtil(String prefix, Key key) throws IOException {
+        System.out.printf("generateAesUtil() param : %s, %s%n", prefix, key);
         if (key == null) {
             return null;
         }
         String uri = key.getUri();
+        if (!uri.contains("http")) {
+            String[] split = uri.split("/");
+            uri = prefix + split[split.length - 1];
+        }
+        String s = DownloadUtil.downloadFile(uri);
         String iv = key.getIv();
-        return null;
+        return new Aes(s, iv);
     }
 
     private static String extractUrlPrefix(String url) {
@@ -72,11 +81,30 @@ public class M3U8Service {
      *
      * @param inf
      * @param prefix url前缀
-     * @param key    url前缀
+     * @param aes    url前缀
      * @return
      */
-    private static String downloadFile(Inf inf, String prefix, Key key) {
-        String format = String.format("inf: %s, prefix: %s, key: %s", inf, prefix, key);
+    private static String downloadFile(Inf inf, String prefix, Aes aes) {
+        String format = String.format("inf: %s, prefix: %s, key: %s", inf, prefix, aes);
+        String url = prefix + inf.getPath();
+        String[] split = url.split("/");
+
+        String path = "tmp/" + split[split.length - 2];
+        File file = new File(path);
+        if (!file.exists()) {
+            file.mkdir();
+        }
+        path = path + "/" + split[split.length - 1];
+        System.out.println("path: " + path);
+        try {
+            InputStream download = DownloadUtil.download(url);
+            byte[] decrypt = aes.decrypt(download);
+            try (FileOutputStream fileOutputStream = new FileOutputStream(new File(path))) {
+                fileOutputStream.write(decrypt);
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
         return format;
     }
 
@@ -87,7 +115,7 @@ public class M3U8Service {
      * @return
      */
     private static M3u8 parserIndexFile(String indexFile) {
-        System.out.println(indexFile);
+        System.out.println("parserIndexFile() param: " + indexFile);
         if (indexFile == null || !indexFile.startsWith("#EXTM3U")) {
             throw new RuntimeException("无效的M3uU8格式");
         }
